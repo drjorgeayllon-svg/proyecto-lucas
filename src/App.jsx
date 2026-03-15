@@ -60,7 +60,6 @@ const INITIAL_ACCOUNTS = {
 
 const INITIAL_TRANSACTIONS = [
   { id: 1, space: 'personal', type: 'ingreso', amount: 3500, accountId: 'banco_p', category: 'Salario', desc: 'Sueldo de Jorge', date: '2026-03-01', addedBy: 'yo' },
-  { id: 2, space: 'personal', type: 'gasto', amount: 45, accountId: 'efectivo_p', category: 'Comida', desc: 'Almuerzo oficina', date: '2026-03-02', addedBy: 'yo' },
   { id: 4, space: 'pareja', type: 'gasto', amount: 1000, accountId: 'banco_j', category: 'Hogar', desc: 'Alquiler (Jorge)', date: '2026-03-05', addedBy: 'yo' },
   { id: 5, space: 'pareja', type: 'gasto', amount: 400, accountId: 'banco_j', category: 'Supermercado', desc: 'Compra Gicela', date: '2026-03-08', addedBy: 'pareja' },
 ];
@@ -92,8 +91,6 @@ export default function App() {
   const [transactions, setTransactions] = useState(INITIAL_TRANSACTIONS);
   const [accounts, setAccounts] = useState(INITIAL_ACCOUNTS);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [enableSplitCalculation, setEnableSplitCalculation] = useState(true);
-  
   const [isTopMenuOpen, setIsTopMenuOpen] = useState(false);
   const [isDiscreetMode, setIsDiscreetMode] = useState(false);
   const [showBalanceDetails, setShowBalanceDetails] = useState(false);
@@ -108,25 +105,14 @@ export default function App() {
   };
 
   const handleAddAccount = (space, newAccount) => {
-    setAccounts(prev => ({
-      ...prev,
-      [space]: [...prev[space], { ...newAccount, id: Date.now().toString() }]
-    }));
+    setAccounts(prev => ({ ...prev, [space]: [...prev[space], { ...newAccount, id: Date.now().toString() }] }));
   };
 
   const handleUpdateAccountBalance = (space, accountId, newBalance) => {
-    setAccounts(prev => ({
-      ...prev,
-      [space]: prev[space].map(acc => 
-        acc.id === accountId ? { ...acc, balance: newBalance } : acc
-      )
-    }));
+    setAccounts(prev => ({ ...prev, [space]: prev[space].map(acc => acc.id === accountId ? { ...acc, balance: newBalance } : acc) }));
   };
 
-  const renderMoney = (amount) => {
-    if (isDiscreetMode) return '***';
-    return formatMoney(amount);
-  };
+  const renderMoney = (amount) => isDiscreetMode ? '***' : formatMoney(amount);
 
   const { totalIncome, totalExpense, balance, spaceTransactions, spaceAccounts } = useMemo(() => {
     const filteredTx = transactions.filter(t => t.space === currentSpace);
@@ -169,8 +155,8 @@ export default function App() {
     return (
       <div className="p-5 space-y-7 pb-28 overflow-y-auto h-full hide-scrollbar animate-fade-in">
         <div className="flex bg-zinc-100 p-1.5 rounded-full w-full max-w-[260px] mx-auto border border-zinc-200/50 shadow-inner">
-          <button onClick={() => setCurrentSpace('personal')} className={`flex-1 py-2 text-xs font-bold rounded-full transition-all duration-300 ${currentSpace === 'personal' ? 'bg-white shadow text-zinc-800 scale-100' : 'text-zinc-400 hover:text-zinc-600'}`}>Personal</button>
-          <button onClick={() => setCurrentSpace('pareja')} className={`flex-1 py-2 text-xs font-bold rounded-full transition-all duration-300 ${currentSpace === 'pareja' ? 'bg-white shadow text-indigo-600 scale-100' : 'text-zinc-400 hover:text-zinc-600'}`}>Pareja</button>
+          <button onClick={() => setCurrentSpace('personal')} className={`flex-1 py-2 text-xs font-bold rounded-full transition-all duration-300 ${currentSpace === 'personal' ? 'bg-white shadow text-zinc-800' : 'text-zinc-400'}`}>Personal</button>
+          <button onClick={() => setCurrentSpace('pareja')} className={`flex-1 py-2 text-xs font-bold rounded-full transition-all duration-300 ${currentSpace === 'pareja' ? 'bg-white shadow text-indigo-600' : 'text-zinc-400'}`}>Pareja</button>
         </div>
 
         <div onClick={() => setShowBalanceDetails(!showBalanceDetails)} className={`rounded-[2rem] p-7 text-white shadow-xl relative overflow-hidden transition-all duration-500 transform hover:scale-[1.02] cursor-pointer ${currentSpace === 'personal' ? 'bg-gradient-to-tr from-zinc-900 via-zinc-800 to-zinc-700' : 'bg-gradient-to-tr from-indigo-900 via-violet-800 to-fuchsia-700'}`}>
@@ -254,7 +240,7 @@ export default function App() {
         <h2 className="text-2xl font-bold text-zinc-800 mb-6">Análisis</h2>
         {currentSpace === 'pareja' && totalExpense > 0 && (
           <div className="bg-zinc-900 rounded-3xl p-6 text-white mb-8 shadow-xl">
-             <div className="flex justify-between items-center mb-4"><span className="text-xs font-bold uppercase tracking-widest text-white/50">Cuentas Claras Jorge/Gicela</span><button onClick={() => setIsSplitModalOpen(true)} className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors"><Percent size={14}/></button></div>
+             <div className="flex justify-between items-center mb-4"><span className="text-xs font-bold uppercase tracking-widest text-white/50">Cuentas Jorge & Gicela</span><button onClick={() => setIsSplitModalOpen(true)} className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors"><Percent size={14}/></button></div>
              <div className="flex justify-between text-xs font-bold mb-2"><span>Jorge: {formatMoney(jPaid)}</span><span>Gicela: {formatMoney(gPaid)}</span></div>
              <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden mb-4"><div className="h-full bg-indigo-500 transition-all duration-1000" style={{ width: `${(jPaid/totalExpense)*100}%` }}/></div>
              <div className="p-3 bg-white/5 rounded-xl text-center text-xs font-bold text-indigo-300 border border-white/10">{diff > 0 ? `Gicela debe transferirte ${formatMoney(Math.abs(diff))}` : `Debes transferirle ${formatMoney(Math.abs(diff))} a Gicela`}</div>
@@ -278,12 +264,12 @@ export default function App() {
       <h2 className="text-2xl font-bold text-zinc-800 mb-6">Configuración</h2>
       <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-zinc-100 mb-8 flex items-center gap-4">
          <div className="w-16 h-16 bg-zinc-900 rounded-full flex items-center justify-center text-3xl shadow-lg">{USERS.yo.avatar}</div>
-         <div><h3 className="font-bold text-xl text-zinc-800">{USERS.yo.name}</h3><p className="text-xs text-zinc-400 font-medium">Plan Pareja Lucas 👶🏻</p></div>
+         <div><h3 className="font-bold text-xl text-zinc-800">{USERS.yo.name}</h3><p className="text-xs text-zinc-400 font-medium">Plan Familiar Lucas 👶🏻</p></div>
       </div>
       <div className="bg-white rounded-3xl shadow-sm border border-zinc-100 overflow-hidden mb-8">
-         <button onClick={() => setIsSplitModalOpen(true)} className="w-full flex justify-between p-4 border-b border-zinc-50 hover:bg-zinc-50 transition-colors"><span className="text-sm font-bold flex items-center gap-3"><Percent size={18} className="text-amber-500"/> Regla Jorge / Gicela</span><span className="text-xs font-bold text-zinc-400">{splitRatio}/{100-splitRatio} <ChevronRight size={14}/></span></button>
+         <button onClick={() => setIsSplitModalOpen(true)} className="w-full flex justify-between p-4 border-b border-zinc-50 hover:bg-zinc-50 transition-colors"><span className="text-sm font-bold flex items-center gap-3"><Percent size={18} className="text-amber-500"/> Regla de Aportes</span><span className="text-xs font-bold text-zinc-400">{splitRatio}/{100-splitRatio} <ChevronRight size={14}/></span></button>
          <button onClick={() => setIsManageAccountsOpen(true)} className="w-full flex justify-between p-4 border-b border-zinc-50 hover:bg-zinc-50 transition-colors"><span className="text-sm font-bold flex items-center gap-3"><WalletCards size={18} className="text-emerald-500"/> Mis Billeteras</span><ChevronRight size={14} className="text-zinc-400"/></button>
-         <button onClick={() => showToast("Exportando Excel para Gicela y Jorge...")} className="w-full flex justify-between p-4 hover:bg-zinc-50 transition-colors"><span className="text-sm font-bold flex items-center gap-3"><Download size={18} className="text-blue-500"/> Exportar para Excel</span><ChevronRight size={14} className="text-zinc-400"/></button>
+         <button onClick={() => showToast("Exportando para Gicela y Jorge...")} className="w-full flex justify-between p-4 hover:bg-zinc-50 transition-colors"><span className="text-sm font-bold flex items-center gap-3"><Download size={18} className="text-blue-500"/> Exportar para Excel</span><ChevronRight size={14} className="text-zinc-400"/></button>
       </div>
       <button onClick={() => showToast("Cerrando sesión segura...")} className="w-full p-4 bg-rose-50 text-rose-600 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-rose-100 transition-colors"><LogOut size={18}/> Salir de la App</button>
     </div>
@@ -349,12 +335,11 @@ export default function App() {
 function TransactionItem({ tx, accounts, onDelete, isDiscreetMode }) {
   const isIncome = tx.type === 'ingreso';
   const catData = CATEGORIES[tx.type].find(c => c.id === tx.category) || CATEGORIES[tx.type][0];
-  const Icon = catData.icon;
   const user = USERS[tx.addedBy];
   return (
     <div className="group flex items-center justify-between p-4 bg-white rounded-2xl border border-zinc-100 shadow-sm hover:border-zinc-200 transition-all">
       <div className="flex items-center gap-3.5 flex-1 min-w-0">
-        <div className={`p-3 rounded-2xl ${catData.bg} ${catData.color} flex-shrink-0`}><Icon size={20} strokeWidth={2.5}/></div>
+        <div className={`p-3 rounded-2xl ${catData.bg} ${catData.color} flex-shrink-0`}><catData.icon size={20} strokeWidth={2.5}/></div>
         <div className="min-w-0 flex-1">
           <p className="font-bold text-zinc-800 text-sm truncate">{tx.category}</p>
           <div className="flex items-center gap-2 mt-0.5">
@@ -417,41 +402,27 @@ function ManageAccountsModal({ onClose, accounts, spaceName, renderMoney, onAddA
             <div className="space-y-3 animate-fade-in">
               {accounts.map(acc => {
                 const style = ACCOUNT_STYLES[acc.type] || ACCOUNT_STYLES.cash;
-                const Icon = style.icon;
                 return (
                   <div key={acc.id} className="flex items-center justify-between p-4 bg-white rounded-[1.5rem] border border-zinc-100 shadow-sm hover:border-zinc-200 transition-all group">
                     <div className="flex items-center gap-4">
-                      <div className={`p-3 rounded-2xl ${style.bg} ${style.color}`}>
-                        <Icon size={20} strokeWidth={2.5} />
-                      </div>
-                      <div>
-                        <p className="font-bold text-zinc-800 text-sm">{acc.name}</p>
-                        <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">{style.label}</p>
-                      </div>
+                      <div className={`p-3 rounded-2xl ${style.bg} ${style.color}`}><style.icon size={20} strokeWidth={2.5} /></div>
+                      <div><p className="font-bold text-zinc-800 text-sm">{acc.name}</p><p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">{style.label}</p></div>
                     </div>
                     <div className="text-right flex flex-col items-end">
-                      <p className={`font-bold tracking-tight text-sm ${acc.balance < 0 ? 'text-rose-600' : 'text-zinc-800'}`}>
-                        {renderMoney(acc.balance)}
-                      </p>
-                      <button onClick={() => { setSelectedAcc(acc); setAccBalance(acc.balance.toString()); setView('edit'); }} className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg mt-1.5 opacity-100 transition-all hover:bg-blue-100">
-                        Ajustar
-                      </button>
+                      <p className={`font-bold tracking-tight text-sm ${acc.balance < 0 ? 'text-rose-600' : 'text-zinc-800'}`}>{renderMoney(acc.balance)}</p>
+                      <button onClick={() => { setSelectedAcc(acc); setAccBalance(acc.balance.toString()); setView('edit'); }} className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg mt-1.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all hover:bg-blue-100">Ajustar</button>
                     </div>
                   </div>
                 );
               })}
-              <button onClick={() => setView('add')} className="w-full flex items-center justify-center gap-2 bg-zinc-50 border-2 border-dashed border-zinc-200 text-zinc-400 font-bold py-5 rounded-[1.5rem] hover:bg-zinc-100 hover:text-zinc-700 transition-all active:scale-95 mt-4">
-                <Plus size={20} strokeWidth={2.5} /> Añadir nueva billetera
-              </button>
+              <button onClick={() => setView('add')} className="w-full flex items-center justify-center gap-2 bg-zinc-50 border-2 border-dashed border-zinc-200 text-zinc-400 font-bold py-5 rounded-[1.5rem] hover:bg-zinc-100 hover:text-zinc-700 transition-all active:scale-95 mt-4"><Plus size={20} strokeWidth={2.5} /> Añadir nueva billetera</button>
             </div>
           )}
-          {view === 'edit' && (
+          {view === 'edit' && selectedAcc && (
             <div className="space-y-8 animate-fade-in pt-4">
               <div className="text-center">
-                <div className={`mx-auto w-fit p-4 rounded-3xl mb-4 ${ACCOUNT_STYLES[selectedAcc?.type]?.bg} ${ACCOUNT_STYLES[selectedAcc?.type]?.color}`}>
-                  {React.createElement(ACCOUNT_STYLES[selectedAcc?.type]?.icon || Wallet, { size: 32 })}
-                </div>
-                <h3 className="text-lg font-bold text-zinc-800">{selectedAcc?.name}</h3>
+                <div className={`mx-auto w-fit p-4 rounded-3xl mb-4 ${ACCOUNT_STYLES[selectedAcc.type].bg} ${ACCOUNT_STYLES[selectedAcc.type].color}`}>{React.createElement(ACCOUNT_STYLES[selectedAcc.type].icon, { size: 32 })}</div>
+                <h3 className="text-lg font-bold text-zinc-800">{selectedAcc.name}</h3>
                 <p className="text-xs text-zinc-400 mt-1">Ingresa el saldo real disponible</p>
               </div>
               <div className="text-center py-4"><p className="text-[10px] font-bold text-zinc-400 uppercase mb-2">Saldo Real BOB</p><input type="number" value={accBalance} onChange={(e) => setAccBalance(e.target.value)} className="w-full text-center text-4xl font-light outline-none bg-transparent border-b border-zinc-100 pb-4" autoFocus /></div>
@@ -461,16 +432,7 @@ function ManageAccountsModal({ onClose, accounts, spaceName, renderMoney, onAddA
           {view === 'add' && (
             <div className="space-y-6 animate-fade-in pt-2">
               <div className="space-y-1"><p className="text-[10px] font-bold text-zinc-400 uppercase ml-1">Nombre de la billetera</p><input type="text" placeholder="Ej. Mi Ahorro Jorge, Banco..." value={accName} onChange={(e) => setAccName(e.target.value)} className="w-full p-4 bg-zinc-50 border border-zinc-100 rounded-2xl outline-none font-bold text-zinc-800 focus:border-zinc-300" /></div>
-              <div className="space-y-1">
-                <p className="text-[10px] font-bold text-zinc-400 uppercase ml-1 mb-2">Tipo</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {Object.entries(ACCOUNT_STYLES).map(([k,v]) => (
-                    <button key={k} onClick={() => setAccType(k)} className={`flex items-center gap-2 p-3 rounded-xl border-2 text-xs font-bold transition-all ${accType === k ? 'border-zinc-900 bg-zinc-900 text-white' : 'border-zinc-100 text-zinc-400 hover:bg-zinc-50'}`}>
-                      {React.createElement(v.icon, { size: 16 })} {v.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <div className="space-y-1"><p className="text-[10px] font-bold text-zinc-400 uppercase ml-1 mb-2">Tipo</p><div className="grid grid-cols-2 gap-2">{Object.entries(ACCOUNT_STYLES).map(([k,v]) => (<button key={k} onClick={() => setAccType(k)} className={`flex items-center gap-2 p-3 rounded-xl border-2 text-xs font-bold transition-all ${accType === k ? 'border-zinc-900 bg-zinc-900 text-white' : 'border-zinc-100 text-zinc-400 hover:bg-zinc-50'}`}>{React.createElement(v.icon, { size: 16 })} {v.label}</button>))}</div></div>
               <div className="space-y-1"><p className="text-[10px] font-bold text-zinc-400 uppercase ml-1">Saldo Inicial</p><input type="number" placeholder="0.00" value={accBalance} onChange={(e) => setAccBalance(e.target.value)} className="w-full p-4 bg-zinc-50 border border-zinc-100 rounded-2xl outline-none font-bold text-zinc-800 focus:border-zinc-300" /></div>
               <button onClick={() => { if(!accName || accBalance === '') return; onAddAccount({ name: accName, type: accType, balance: Number(accBalance), icon: ACCOUNT_STYLES[accType].icon, color: ACCOUNT_STYLES[accType].color, bg: ACCOUNT_STYLES[accType].bg }); setView('list'); }} className="w-full bg-blue-600 text-white font-bold py-5 rounded-[1.5rem] shadow-xl active:scale-95 transition-all">Crear Billetera Familiar</button>
             </div>
