@@ -9,7 +9,7 @@ import {
   Percent, Eye, EyeOff, CalendarClock, HeartHandshake, Search
 } from 'lucide-react';
 
-// --- TUS LLAVES DE FIREBASE ---
+// --- CONFIGURACIÓN DE FIREBASE (Tus llaves) ---
 const firebaseConfig = {
   apiKey: "AIzaSyDEhiZD-60zklByHPIzYLV2HcG_gCsnlro",
   authDomain: "proyecto-lucas-eed89.firebaseapp.com",
@@ -60,6 +60,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('home');
   const [currentSpace, setCurrentSpace] = useState('pareja'); 
   
+  // ESTADOS INICIALES TOTALMENTE VACÍOS (EN CERO)
   const [transactions, setTransactions] = useState([]);
   const [accounts, setAccounts] = useState({ personal: [], pareja: [] });
   
@@ -96,7 +97,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 2. DESCARGAR DATOS EN TIEMPO REAL
+  // 2. DESCARGAR DATOS EN TIEMPO REAL DESDE CERO
   useEffect(() => {
     if (!user || !familyId) return;
 
@@ -149,7 +150,7 @@ export default function App() {
       const q = query(collection(db, 'users'), where('email', '==', partnerEmail.toLowerCase().trim()));
       const querySnapshot = await getDocs(q);
       if (querySnapshot.empty) {
-        alert("No encontramos ese correo. Asegúrate de que Gicela ya haya iniciado sesión en la app una vez.");
+        alert("No encontramos ese correo. Asegúrate de que tu pareja ya haya iniciado sesión en la app una vez.");
         return;
       }
       const partnerData = querySnapshot.docs[0].data();
@@ -347,7 +348,7 @@ export default function App() {
             <button onClick={() => setActiveTab('transactions')} className="text-xs text-zinc-400 font-medium flex items-center">Ver todo <ChevronRight size={14}/></button>
           </div>
           <div className="space-y-3">
-            {spaceTransactions.length > 0 ? spaceTransactions.slice(0, 4).map(tx => <TransactionItem key={tx.id} tx={tx} accounts={accounts} onDelete={handleDeleteTransaction} isDiscreetMode={isDiscreetMode} />) : (
+            {spaceTransactions.length > 0 ? spaceTransactions.sort((a,b) => b.timestamp - a.timestamp).slice(0, 4).map(tx => <TransactionItem key={tx.id} tx={tx} accounts={accounts} onDelete={handleDeleteTransaction} isDiscreetMode={isDiscreetMode} />) : (
               <div className="p-6 text-center border-2 border-dashed border-zinc-100 rounded-2xl">
                 <p className="text-zinc-400 text-sm font-medium">Aún no hay movimientos.</p>
                 <p className="text-zinc-400 text-xs mt-1">Crea una cuenta y usa el botón <Plus size={12} className="inline text-indigo-500"/> abajo para empezar.</p>
@@ -429,10 +430,12 @@ export default function App() {
       <div className="bg-white rounded-3xl shadow-sm border border-zinc-100 overflow-hidden mb-8">
          <button onClick={() => setIsSplitModalOpen(true)} className="w-full flex justify-between p-4 border-b border-zinc-50 hover:bg-zinc-50 transition-colors"><span className="text-sm font-bold flex items-center gap-3"><Percent size={18} className="text-amber-500"/> Regla de Aportes</span><span className="text-xs font-bold text-zinc-400">{splitRatio}/{100-splitRatio} <ChevronRight size={14}/></span></button>
          <button onClick={() => setIsManageAccountsOpen(true)} className="w-full flex justify-between p-4 border-b border-zinc-50 hover:bg-zinc-50 transition-colors"><span className="text-sm font-bold flex items-center gap-3"><WalletCards size={18} className="text-emerald-500"/> Mis Billeteras</span><ChevronRight size={14} className="text-zinc-400"/></button>
-         <button onClick={() => showToast("La descarga web se habilitará pronto.")} className="w-full flex justify-between p-4 hover:bg-zinc-50 transition-colors"><span className="text-sm font-bold flex items-center gap-3"><Download size={18} className="text-blue-500"/> Exportar para Excel</span><ChevronRight size={14} className="text-zinc-400"/></button>
       </div>
-      {/* BOTÓN SALIR CONFIGURADO CORRECTAMENTE */}
-      <button onClick={logout} className="w-full p-4 bg-rose-50 text-rose-600 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-rose-100 transition-colors"><LogOut size={18}/> Salir de la App</button>
+      
+      {/* BOTÓN SALIR 100% FUNCIONAL */}
+      <button onClick={logout} className="w-full p-4 bg-rose-50 text-rose-600 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-rose-100 transition-colors">
+        <LogOut size={18}/> Salir de la App
+      </button>
     </div>
   );
 
@@ -558,7 +561,7 @@ function AddTransactionModal({ onClose, onSave, initialSpace, accounts }) {
         <div className="relative w-full bg-white rounded-t-[2.5rem] p-8 animate-slide-up shadow-2xl flex flex-col gap-4 text-center items-center">
            <div className="p-4 bg-rose-50 text-rose-500 rounded-full mb-2"><Wallet size={32} /></div>
            <h3 className="font-extrabold text-xl text-zinc-800">¡Crea una cuenta primero!</h3>
-           <p className="text-zinc-500 text-sm mb-4">Ve a "Administrar" en la pantalla principal para crear una billetera donde registrar este movimiento.</p>
+           <p className="text-zinc-500 text-sm mb-4">No puedes registrar gastos sin tener dinero en algún lado. Ve a "Administrar" en la pantalla principal para crear una billetera.</p>
            <button onClick={onClose} className="w-full py-4 bg-zinc-900 text-white font-bold rounded-[1.5rem] shadow-xl transition-all active:scale-95">Entendido</button>
         </div>
       </div>
@@ -599,7 +602,7 @@ function ManageAccountsModal({ onClose, accounts, spaceName, renderMoney, onAddA
       <div className="absolute inset-0 bg-zinc-900/60 backdrop-blur-sm animate-fade-in" onClick={onClose} />
       <div className="relative w-full max-h-[90%] bg-white rounded-t-[2.5rem] p-6 animate-slide-up flex flex-col shadow-2xl">
         <div className="flex justify-between items-center mb-6">
-          {view === 'list' ? (<div><h3 className="font-extrabold text-xl text-zinc-800">Mis Billeteras</h3><p className="text-xs text-zinc-400 capitalize">Espacio {spaceName}</p></div>) : (<button onClick={() => setView('list')} className="flex items-center gap-2 font-bold text-zinc-500 hover:text-zinc-800 transition-colors"><ChevronLeft size={20}/> Volver</button>)}
+          {view === 'list' ? (<div><h3 className="font-extrabold text-xl text-zinc-800">Mis Billeteras</h3><p className="text-xs text-zinc-400 capitalize">Control de flujo {spaceName}</p></div>) : (<button onClick={() => setView('list')} className="flex items-center gap-2 font-bold text-zinc-500 hover:text-zinc-800 transition-colors"><ChevronLeft size={20}/> Volver</button>)}
           <button onClick={onClose} className="p-2 bg-zinc-100 rounded-full text-zinc-500"><X size={20}/></button>
         </div>
         <div className="flex-1 overflow-y-auto hide-scrollbar pb-6">
@@ -616,7 +619,7 @@ function ManageAccountsModal({ onClose, accounts, spaceName, renderMoney, onAddA
                     </div>
                     <div className="text-right flex flex-col items-end">
                       <p className={`font-bold tracking-tight text-sm ${Number(acc.balance) < 0 ? 'text-rose-600' : 'text-zinc-800'}`}>{renderMoney(acc.balance)}</p>
-                      <button onClick={() => { setSelectedAcc(acc); setAccBalance(acc.balance.toString()); setView('edit'); }} className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg mt-1.5 opacity-100 transition-all hover:bg-blue-100">Ajustar</button>
+                      <button onClick={() => { setSelectedAcc(acc); setAccBalance(acc.balance.toString()); setView('edit'); }} className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg mt-1.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all hover:bg-blue-100">Ajustar</button>
                     </div>
                   </div>
                 );
