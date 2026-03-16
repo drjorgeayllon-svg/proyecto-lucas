@@ -1,15 +1,15 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from 'firebase/auth';
-import { getFirestore, collection, doc, onSnapshot, addDoc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { getFirestore, collection, doc, onSnapshot, addDoc, deleteDoc, updateDoc, query, where, getDocs, getDoc, setDoc } from 'firebase/firestore';
 import { 
-  Home, ListOrdered, PieChart, Plus, ArrowUpRight, ArrowDownRight, Wallet, Users, X, CreditCard, 
+  Home, ListOrdered, PieChart, Plus, ArrowUpRight, Wallet, Users, X, CreditCard, 
   Coffee, ShoppingCart, Car, Home as HomeIcon, Zap, User, Building, Landmark, PiggyBank, 
-  Settings, LogOut, Trash2, ChevronRight, ChevronLeft, Sparkles, Bell, Moon, Download, 
-  Tags, WalletCards, Shield, Link2, Percent, Calculator, Eye, EyeOff, CalendarClock 
+  Settings, LogOut, Trash2, ChevronRight, ChevronLeft, Sparkles, Download, WalletCards, 
+  Percent, Eye, EyeOff, CalendarClock, HeartHandshake, Search
 } from 'lucide-react';
 
-// --- CONFIGURACIÓN DE FIREBASE DE JORGE ---
+// --- TUS LLAVES DE FIREBASE ---
 const firebaseConfig = {
   apiKey: "AIzaSyDEhiZD-60zklByHPIzYLV2HcG_gCsnlro",
   authDomain: "proyecto-lucas-eed89.firebaseapp.com",
@@ -25,7 +25,7 @@ const db = getFirestore(app);
 const provider = new GoogleAuthProvider();
 
 const formatMoney = (amount) => {
-  return new Intl.NumberFormat('es-BO', { style: 'currency', currency: 'BOB', minimumFractionDigits: 0 }).format(amount);
+  return new Intl.NumberFormat('es-BO', { style: 'currency', currency: 'BOB', minimumFractionDigits: 0 }).format(amount || 0);
 };
 
 const CATEGORIES = {
@@ -54,11 +54,15 @@ const ACCOUNT_STYLES = {
 
 export default function App() {
   const [user, setUser] = useState(null);
+  const [familyId, setFamilyId] = useState(null); 
   const [loading, setLoading] = useState(true);
+  
   const [activeTab, setActiveTab] = useState('home');
   const [currentSpace, setCurrentSpace] = useState('pareja'); 
+  
   const [transactions, setTransactions] = useState([]);
   const [accounts, setAccounts] = useState({ personal: [], pareja: [] });
+  
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDiscreetMode, setIsDiscreetMode] = useState(false);
   const [showBalanceDetails, setShowBalanceDetails] = useState(false);
@@ -67,56 +71,123 @@ export default function App() {
   const [isSplitModalOpen, setIsSplitModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
   const [isTopMenuOpen, setIsTopMenuOpen] = useState(false);
+  const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
 
-  // 1. Manejo de Sesión
+  // 1. GESTIÓN DE SESIÓN Y CREACIÓN DE PERFIL EN FIREBASE
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
+      if (currentUser) {
+        const userRef = doc(db, 'users', currentUser.uid);
+        const userSnap = await getDoc(userRef);
+        if (!userSnap.exists()) {
+          await setDoc(userRef, { email: currentUser.email, name: currentUser.displayName, familyId: currentUser.uid });
+          setFamilyId(currentUser.uid);
+        } else {
+          setFamilyId(userSnap.data().familyId);
+        }
+      } else {
+        setFamilyId(null);
+        setTransactions([]);
+        setAccounts({ personal: [], pareja: [] });
+      }
       setLoading(false);
     });
     return () => unsubscribe();
   }, []);
 
-  // 2. Sincronización con Firebase (Tiempo Real)
+  // 2. DESCARGAR DATOS EN TIEMPO REAL
   useEffect(() => {
-    if (!user) return;
+    if (!user || !familyId) return;
 
-    // Escuchar Transacciones
-    const txRef = collection(db, 'lucas_transactions');
-    const unsubTx = onSnapshot(txRef, (snapshot) => {
-      const allTx = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      // Filtro inteligente: Mostrar lo de Pareja + Lo Personal de este usuario
-      const myTx = allTx.filter(tx => tx.space === 'pareja' || (tx.space === 'personal' && tx.userId === user.uid));
-      setTransactions(myTx.sort((a, b) => b.timestamp - a.timestamp));
+    const qPersonalTx = query(collection(db, 'users', user.uid, 'transactions'));
+    const unsubPersonalTx = onSnapshot(qPersonalTx, (snap) => {
+      const personalData = snap.docs.map(d => ({ id: d.id, ...d.data(), space: 'personal' }));
+      setTransactions(prev => [...prev.filter(t => t.space !== 'personal'), ...personalData]);
     });
 
-    // Escuchar Cuentas
-    const accRef = collection(db, 'lucas_accounts');
-    const unsubAcc = onSnapshot(accRef, (snapshot) => {
-      const allAcc = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setAccounts({
-        pareja: allAcc.filter(a => a.space === 'pareja'),
-        personal: allAcc.filter(a => a.space === 'personal' && a.userId === user.uid)
-      });
+    const qParejaTx = query(collection(db, 'families', familyId, 'transactions'));
+    const unsubParejaTx = onSnapshot(qParejaTx, (snap) => {
+      const parejaData = snap.docs.map(d => ({ id: d.id, ...d.data(), space: 'pareja' }));
+      setTransactions(prev => [...prev.filter(t => t.space !== 'pareja'), ...parejaData]);
     });
 
-    return () => { unsubTx(); unsubAcc(); };
-  }, [user]);
+    const qPersonalAcc = query(collection(db, 'users', user.uid, 'accounts'));
+    const unsubPersonalAcc = onSnapshot(qPersonalAcc, (snap) => {
+      setAccounts(prev => ({ ...prev, personal: snap.docs.map(d => ({ id: d.id, ...d.data() })) }));
+    });
+
+    const qParejaAcc = query(collection(db, 'families', familyId, 'accounts'));
+    const unsubParejaAcc = onSnapshot(qParejaAcc, (snap) => {
+      setAccounts(prev => ({ ...prev, pareja: snap.docs.map(d => ({ id: d.id, ...d.data() })) }));
+    });
+
+    return () => { unsubPersonalTx(); unsubParejaTx(); unsubPersonalAcc(); unsubParejaAcc(); };
+  }, [user, familyId]);
 
   const login = async () => {
-    try { await signInWithPopup(auth, provider); } catch (error) { console.error("Error", error); }
+    try { await signInWithPopup(auth, provider); } catch (error) { console.error(error); }
   };
 
-  const logout = () => signOut(auth);
+  const logout = async () => {
+    try {
+      await signOut(auth);
+      showToast("Sesión cerrada");
+    } catch (error) {
+      console.error(error);
+    }
+  };
 
   const showToast = (msg) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
   };
 
+  // --- VINCULAR PAREJA ---
+  const handleLinkPartner = async (partnerEmail) => {
+    try {
+      const q = query(collection(db, 'users'), where('email', '==', partnerEmail.toLowerCase().trim()));
+      const querySnapshot = await getDocs(q);
+      if (querySnapshot.empty) {
+        alert("No encontramos ese correo. Asegúrate de que Gicela ya haya iniciado sesión en la app una vez.");
+        return;
+      }
+      const partnerData = querySnapshot.docs[0].data();
+      const newFamilyId = partnerData.familyId;
+
+      await updateDoc(doc(db, 'users', user.uid), { familyId: newFamilyId });
+      setFamilyId(newFamilyId);
+      setIsLinkModalOpen(false);
+      showToast("¡Cuentas vinculadas con éxito! ❤️");
+    } catch (e) {
+      console.error(e);
+      alert("Hubo un error al vincular.");
+    }
+  };
+
+  const handleAddAccount = async (space, newAccount) => {
+    try {
+      const path = space === 'pareja' ? collection(db, 'families', familyId, 'accounts') : collection(db, 'users', user.uid, 'accounts');
+      await addDoc(path, { ...newAccount, userId: user.uid });
+      showToast("Billetera creada");
+    } catch (e) { console.error(e); }
+  };
+
+  const handleUpdateAccountBalance = async (space, accountId, newBalance) => {
+    try {
+      const path = space === 'pareja' ? doc(db, 'families', familyId, 'accounts', accountId) : doc(db, 'users', user.uid, 'accounts', accountId);
+      await updateDoc(path, { balance: newBalance });
+      showToast("Saldo ajustado");
+    } catch (e) { console.error(e); }
+  };
+
   const handleAddTransaction = async (newTx) => {
     try {
-      await addDoc(collection(db, 'lucas_transactions'), {
+      const path = newTx.space === 'pareja' 
+        ? collection(db, 'families', familyId, 'transactions')
+        : collection(db, 'users', user.uid, 'transactions');
+
+      await addDoc(path, {
         ...newTx,
         addedBy: user.displayName.split(' ')[0],
         userId: user.uid,
@@ -124,52 +195,45 @@ export default function App() {
         timestamp: Date.now()
       });
 
-      // Actualizar saldo de la cuenta
       const accountToUpdate = accounts[newTx.space].find(a => a.id === newTx.accountId);
       if (accountToUpdate) {
         const newBalance = newTx.type === 'ingreso' 
           ? Number(accountToUpdate.balance) + Number(newTx.amount)
           : Number(accountToUpdate.balance) - Number(newTx.amount);
-        await updateDoc(doc(db, 'lucas_accounts', newTx.accountId), { balance: newBalance });
+        
+        const accPath = newTx.space === 'pareja' 
+          ? doc(db, 'families', familyId, 'accounts', newTx.accountId)
+          : doc(db, 'users', user.uid, 'accounts', newTx.accountId);
+          
+        await updateDoc(accPath, { balance: newBalance });
       }
       setIsModalOpen(false);
-      showToast("Guardado en la nube ☁️");
+      showToast("Registro guardado ☁️");
     } catch (e) { console.error(e); }
   };
 
   const handleDeleteTransaction = async (id, txSpace, txType, txAmount, accountId) => {
     try {
-      await deleteDoc(doc(db, 'lucas_transactions', id));
+      const txPath = txSpace === 'pareja' ? doc(db, 'families', familyId, 'transactions', id) : doc(db, 'users', user.uid, 'transactions', id);
+      await deleteDoc(txPath);
+
       const accountToUpdate = accounts[txSpace].find(a => a.id === accountId);
       if (accountToUpdate) {
         const newBalance = txType === 'ingreso' 
           ? Number(accountToUpdate.balance) - Number(txAmount)
           : Number(accountToUpdate.balance) + Number(txAmount);
-        await updateDoc(doc(db, 'lucas_accounts', accountId), { balance: newBalance });
+        
+        const accPath = txSpace === 'pareja' ? doc(db, 'families', familyId, 'accounts', accountId) : doc(db, 'users', user.uid, 'accounts', accountId);
+        await updateDoc(accPath, { balance: newBalance });
       }
       showToast("Registro eliminado");
     } catch (e) { console.error(e); }
   };
 
-  const handleAddAccount = async (space, newAccount) => {
-    try {
-      await addDoc(collection(db, 'lucas_accounts'), {
-        ...newAccount,
-        space: space,
-        userId: user.uid
-      });
-      showToast("Cuenta creada con éxito");
-    } catch (e) { console.error(e); }
+  const renderMoney = (amount) => {
+    if (isDiscreetMode) return '***';
+    return formatMoney(amount);
   };
-
-  const handleUpdateAccountBalance = async (space, accountId, newBalance) => {
-    try {
-      await updateDoc(doc(db, 'lucas_accounts', accountId), { balance: newBalance });
-      showToast("Saldo ajustado");
-    } catch (e) { console.error(e); }
-  };
-
-  const renderMoney = (amount) => isDiscreetMode ? '***' : formatMoney(amount);
 
   const { totalIncome, totalExpense, balance, spaceTransactions, spaceAccounts } = useMemo(() => {
     const filteredTx = transactions.filter(t => t.space === currentSpace);
@@ -183,39 +247,39 @@ export default function App() {
     return { totalIncome: income, totalExpense: expense, balance: actualBalance, spaceTransactions: filteredTx, spaceAccounts: currentAccounts };
   }, [transactions, currentSpace, accounts]);
 
-  // Pantalla de Carga
   if (loading) return (
     <div className="min-h-screen bg-zinc-900 flex items-center justify-center">
-      <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+      <div className="text-white flex flex-col items-center gap-4">
+        <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+        <p className="font-bold text-sm tracking-widest uppercase">Cargando Proyecto Lucas...</p>
+      </div>
     </div>
   );
 
-  // Pantalla de Inicio de Sesión
   if (!user) return (
     <div className="min-h-screen bg-zinc-900 flex flex-col items-center justify-center p-6 text-center">
-      <div className="w-24 h-24 bg-white/10 rounded-[2.5rem] flex items-center justify-center mx-auto mb-6 shadow-2xl">
-        <PiggyBank size={48} className="text-indigo-400" />
+      <div className="mb-8">
+        <div className="w-24 h-24 bg-white/10 rounded-[2.5rem] flex items-center justify-center mx-auto mb-6 shadow-2xl border border-white/5">
+          <PiggyBank size={48} className="text-indigo-400" />
+        </div>
+        <h1 className="text-3xl font-black text-white mb-2">Proyecto Lucas</h1>
+        <p className="text-zinc-400 text-sm max-w-xs mx-auto">Finanzas familiares en tiempo real. Empieza desde cero y vincúlate con tu pareja.</p>
       </div>
-      <h1 className="text-3xl font-black text-white mb-2 tracking-tight">Proyecto Lucas</h1>
-      <p className="text-zinc-400 text-sm max-w-xs mx-auto mb-10">Tus finanzas familiares seguras y sincronizadas en tiempo real.</p>
-      
-      <button onClick={login} className="w-full max-w-xs bg-white text-zinc-900 font-bold py-4 rounded-2xl flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-transform">
+      <button onClick={login} className="w-full max-w-xs bg-white text-zinc-900 font-black py-4 rounded-2xl flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-transform">
         <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/action/google.svg" width="20" alt="google" />
-        Continuar con Google
+        Entrar con Google
       </button>
-      <p className="mt-8 text-[10px] text-zinc-500 uppercase font-bold tracking-widest">Para Jorge & Gicela 👶🏻</p>
     </div>
   );
 
-  // VISTAS PRINCIPALES
   const HomeView = () => {
     const currentDay = Math.max(1, new Date().getDate());
     const dailyAvg = totalExpense / currentDay;
     return (
       <div className="p-5 space-y-7 pb-28 overflow-y-auto h-full hide-scrollbar animate-fade-in">
         <div className="flex bg-zinc-100 p-1.5 rounded-full w-full max-w-[260px] mx-auto border border-zinc-200/50 shadow-inner">
-          <button onClick={() => setCurrentSpace('personal')} className={`flex-1 py-2 text-xs font-bold rounded-full transition-all duration-300 ${currentSpace === 'personal' ? 'bg-white shadow text-zinc-800 scale-100' : 'text-zinc-400'}`}>Personal</button>
-          <button onClick={() => setCurrentSpace('pareja')} className={`flex-1 py-2 text-xs font-bold rounded-full transition-all duration-300 ${currentSpace === 'pareja' ? 'bg-white shadow text-indigo-600 scale-100' : 'text-zinc-400'}`}>Pareja</button>
+          <button onClick={() => setCurrentSpace('personal')} className={`flex-1 py-2 text-xs font-bold rounded-full transition-all duration-300 ${currentSpace === 'personal' ? 'bg-white shadow text-zinc-800 scale-100' : 'text-zinc-400 hover:text-zinc-600'}`}>Personal</button>
+          <button onClick={() => setCurrentSpace('pareja')} className={`flex-1 py-2 text-xs font-bold rounded-full transition-all duration-300 ${currentSpace === 'pareja' ? 'bg-white shadow text-indigo-600 scale-100' : 'text-zinc-400 hover:text-zinc-600'}`}>Pareja</button>
         </div>
 
         <div onClick={() => setShowBalanceDetails(!showBalanceDetails)} className={`rounded-[2rem] p-7 text-white shadow-xl relative overflow-hidden transition-all duration-500 transform hover:scale-[1.02] cursor-pointer ${currentSpace === 'personal' ? 'bg-gradient-to-tr from-zinc-900 via-zinc-800 to-zinc-700' : 'bg-gradient-to-tr from-indigo-900 via-violet-800 to-fuchsia-700'}`}>
@@ -232,7 +296,7 @@ export default function App() {
                       <span>{renderMoney(acc.balance)}</span>
                     </div>
                   )
-                }) : <p className="text-xs text-white/50 italic">Sin cuentas creadas</p>}
+                }) : <p className="text-xs text-white/50 italic">Aún no hay billeteras creadas</p>}
               </div>
               <div className="mt-4 pt-3 border-t border-white/10">
                 <p className="text-[10px] text-emerald-300 font-bold uppercase tracking-widest flex items-center gap-1"><Zap size={10}/> Gasto Diario: {renderMoney(dailyAvg)}</p>
@@ -268,10 +332,10 @@ export default function App() {
                 </div>
               );
             }) : (
-              <div className="snap-center min-w-[150px] bg-white p-5 rounded-[1.5rem] border border-zinc-100 shadow-sm flex-shrink-0 opacity-50 flex flex-col items-center justify-center text-center">
+              <div className="snap-center w-[200px] bg-zinc-50 border-2 border-dashed border-zinc-200 p-6 rounded-[1.5rem] flex-shrink-0 flex flex-col items-center justify-center text-center">
                 <WalletCards size={24} className="text-zinc-300 mb-2"/>
-                <p className="text-xs font-bold text-zinc-400">Sin cuentas</p>
-                <p className="text-[10px] text-zinc-400">Crea una en Administrar</p>
+                <p className="text-xs font-bold text-zinc-400 mb-2">Todo está en cero</p>
+                <button onClick={() => setIsManageAccountsOpen(true)} className="text-[10px] bg-white border border-zinc-200 text-zinc-600 px-3 py-1.5 rounded-full font-bold hover:bg-zinc-100 transition-colors">Crear billetera</button>
               </div>
             )}
           </div>
@@ -283,7 +347,12 @@ export default function App() {
             <button onClick={() => setActiveTab('transactions')} className="text-xs text-zinc-400 font-medium flex items-center">Ver todo <ChevronRight size={14}/></button>
           </div>
           <div className="space-y-3">
-            {spaceTransactions.length > 0 ? spaceTransactions.slice(0, 4).map(tx => <TransactionItem key={tx.id} tx={tx} accounts={accounts} onDelete={handleDeleteTransaction} isDiscreetMode={isDiscreetMode} />) : <p className="text-center py-6 text-zinc-400 text-sm italic">Sin movimientos aún</p>}
+            {spaceTransactions.length > 0 ? spaceTransactions.slice(0, 4).map(tx => <TransactionItem key={tx.id} tx={tx} accounts={accounts} onDelete={handleDeleteTransaction} isDiscreetMode={isDiscreetMode} />) : (
+              <div className="p-6 text-center border-2 border-dashed border-zinc-100 rounded-2xl">
+                <p className="text-zinc-400 text-sm font-medium">Aún no hay movimientos.</p>
+                <p className="text-zinc-400 text-xs mt-1">Crea una cuenta y usa el botón <Plus size={12} className="inline text-indigo-500"/> abajo para empezar.</p>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -294,7 +363,7 @@ export default function App() {
     <div className="p-5 pb-28 overflow-y-auto h-full hide-scrollbar bg-zinc-50 animate-fade-in">
       <h2 className="text-2xl font-bold text-zinc-800 mb-6 tracking-tight">Historial</h2>
       <div className="space-y-3">
-        {spaceTransactions.length > 0 ? spaceTransactions.map(tx => <TransactionItem key={tx.id} tx={tx} accounts={accounts} onDelete={handleDeleteTransaction} isDiscreetMode={isDiscreetMode} />) : <p className="text-center py-20 text-zinc-400 font-medium">No hay registros aquí.</p>}
+        {spaceTransactions.length > 0 ? spaceTransactions.sort((a,b) => b.timestamp - a.timestamp).map(tx => <TransactionItem key={tx.id} tx={tx} accounts={accounts} onDelete={handleDeleteTransaction} isDiscreetMode={isDiscreetMode} />) : <p className="text-center py-20 text-zinc-400">Todo limpio por aquí ✨</p>}
       </div>
     </div>
   );
@@ -304,13 +373,10 @@ export default function App() {
     const sortedCategories = Object.entries(expensesByCategory).sort((a, b) => b[1] - a[1]);
     const maxExpense = sortedCategories.length > 0 ? sortedCategories[0][1] : 0;
     
-    let userPaid = 0; let otherPaid = 0;
-    spaceTransactions.filter(t => t.type === 'gasto').forEach(tx => { 
-      if (tx.userId === user.uid) userPaid += tx.amount; 
-      else otherPaid += tx.amount; 
-    });
+    let myPaid = 0; let partnerPaid = 0;
+    spaceTransactions.filter(t => t.type === 'gasto').forEach(tx => { if (tx.userId === user.uid) myPaid += tx.amount; else partnerPaid += tx.amount; });
     const myTarget = totalExpense * (splitRatio / 100);
-    const diff = userPaid - myTarget;
+    const diff = myPaid - myTarget;
 
     return (
       <div className="p-5 pb-28 overflow-y-auto h-full hide-scrollbar animate-fade-in">
@@ -318,11 +384,9 @@ export default function App() {
         {currentSpace === 'pareja' && totalExpense > 0 && (
           <div className="bg-zinc-900 rounded-3xl p-6 text-white mb-8 shadow-xl">
              <div className="flex justify-between items-center mb-4"><span className="text-xs font-bold uppercase tracking-widest text-white/50">Cuentas Claras</span><button onClick={() => setIsSplitModalOpen(true)} className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors"><Percent size={14}/></button></div>
-             <div className="flex justify-between text-xs font-bold mb-2"><span>Tú: {formatMoney(userPaid)}</span><span>Pareja: {formatMoney(otherPaid)}</span></div>
-             <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden mb-4"><div className="h-full bg-indigo-500 transition-all duration-1000" style={{ width: `${(userPaid/totalExpense)*100}%` }}/></div>
-             <div className="p-3 bg-white/5 rounded-xl text-center text-xs font-bold text-indigo-300 border border-white/10">
-               {diff > 0 ? `Tu pareja te debe ${formatMoney(Math.abs(diff))}` : diff < 0 ? `Debes ${formatMoney(Math.abs(diff))} a tu pareja` : '¡Están a mano!'}
-             </div>
+             <div className="flex justify-between text-xs font-bold mb-2"><span>Tú: {formatMoney(myPaid)}</span><span>Pareja: {formatMoney(partnerPaid)}</span></div>
+             <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden mb-4"><div className="h-full bg-indigo-500 transition-all duration-1000" style={{ width: `${(myPaid/totalExpense)*100}%` }}/></div>
+             <div className="p-3 bg-white/5 rounded-xl text-center text-xs font-bold text-indigo-300 border border-white/10">{diff > 0 ? `Tu pareja te debe ${formatMoney(Math.abs(diff))}` : diff < 0 ? `Debes ${formatMoney(Math.abs(diff))} a tu pareja` : 'Están a mano 🙌'}</div>
           </div>
         )}
         <h4 className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest mb-4">Gasto por Categoría</h4>
@@ -333,7 +397,7 @@ export default function App() {
               <div className="h-2 w-full bg-zinc-100 rounded-full overflow-hidden"><div className="h-full bg-zinc-800 transition-all duration-1000" style={{ width: `${(amt/maxExpense)*100}%` }}/></div>
             </div>
           ))}
-          {sortedCategories.length === 0 && <p className="text-center text-zinc-400 text-sm mt-10">Sin datos para analizar</p>}
+          {sortedCategories.length === 0 && <p className="text-center text-zinc-400 text-sm mt-10">Agrega gastos para ver el análisis</p>}
         </div>
       </div>
     );
@@ -342,19 +406,33 @@ export default function App() {
   const ProfileView = () => (
     <div className="p-5 pb-28 overflow-y-auto h-full hide-scrollbar bg-zinc-50/50 animate-fade-in">
       <h2 className="text-2xl font-bold text-zinc-800 mb-6">Configuración</h2>
-      <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-zinc-100 mb-8 flex items-center gap-4">
-         <img src={user.photoURL} alt="perfil" className="w-16 h-16 rounded-full shadow-lg border border-zinc-200" />
-         <div className="flex-1 min-w-0">
+      
+      <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-zinc-100 mb-6 flex items-center gap-4">
+         <img src={user.photoURL} alt="avatar" className="w-16 h-16 rounded-full shadow-lg border border-zinc-200" />
+         <div className="min-w-0 flex-1">
            <h3 className="font-bold text-xl text-zinc-800 truncate">{user.displayName}</h3>
            <p className="text-xs text-zinc-400 font-medium truncate">{user.email}</p>
          </div>
       </div>
+
+      <div className="bg-indigo-50 border border-indigo-100 rounded-[2rem] p-6 mb-8 relative overflow-hidden">
+        <div className="absolute -right-4 -top-4 text-indigo-100"><HeartHandshake size={100} /></div>
+        <div className="relative z-10">
+          <h3 className="font-bold text-indigo-900 mb-1">Vincular Pareja</h3>
+          <p className="text-xs text-indigo-600 mb-4 max-w-[80%]">Ingresa el correo de tu pareja para compartir las cuentas y ahorrar juntos.</p>
+          <button onClick={() => setIsLinkModalOpen(true)} className="bg-indigo-600 text-white text-xs font-bold px-5 py-2.5 rounded-full shadow-md hover:bg-indigo-700 active:scale-95 transition-all">
+            Conectar Cuenta
+          </button>
+        </div>
+      </div>
+
       <div className="bg-white rounded-3xl shadow-sm border border-zinc-100 overflow-hidden mb-8">
          <button onClick={() => setIsSplitModalOpen(true)} className="w-full flex justify-between p-4 border-b border-zinc-50 hover:bg-zinc-50 transition-colors"><span className="text-sm font-bold flex items-center gap-3"><Percent size={18} className="text-amber-500"/> Regla de Aportes</span><span className="text-xs font-bold text-zinc-400">{splitRatio}/{100-splitRatio} <ChevronRight size={14}/></span></button>
          <button onClick={() => setIsManageAccountsOpen(true)} className="w-full flex justify-between p-4 border-b border-zinc-50 hover:bg-zinc-50 transition-colors"><span className="text-sm font-bold flex items-center gap-3"><WalletCards size={18} className="text-emerald-500"/> Mis Billeteras</span><ChevronRight size={14} className="text-zinc-400"/></button>
-         <button onClick={() => showToast("Exportando para Excel...")} className="w-full flex justify-between p-4 hover:bg-zinc-50 transition-colors"><span className="text-sm font-bold flex items-center gap-3"><Download size={18} className="text-blue-500"/> Exportar Excel</span><ChevronRight size={14} className="text-zinc-400"/></button>
+         <button onClick={() => showToast("La descarga web se habilitará pronto.")} className="w-full flex justify-between p-4 hover:bg-zinc-50 transition-colors"><span className="text-sm font-bold flex items-center gap-3"><Download size={18} className="text-blue-500"/> Exportar para Excel</span><ChevronRight size={14} className="text-zinc-400"/></button>
       </div>
-      <button onClick={logout} className="w-full p-4 bg-rose-50 text-rose-600 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-rose-100 transition-colors"><LogOut size={18}/> Cerrar Sesión</button>
+      {/* BOTÓN SALIR CONFIGURADO CORRECTAMENTE */}
+      <button onClick={logout} className="w-full p-4 bg-rose-50 text-rose-600 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-rose-100 transition-colors"><LogOut size={18}/> Salir de la App</button>
     </div>
   );
 
@@ -362,10 +440,9 @@ export default function App() {
     <div className="bg-zinc-200/50 min-h-screen flex justify-center items-center p-0 sm:p-4 font-sans text-zinc-900 relative">
       <div className="w-full max-w-[400px] h-[100dvh] sm:h-[820px] bg-white sm:rounded-[3rem] shadow-2xl relative overflow-hidden flex flex-col sm:border-[10px] border-zinc-900">
         <div className="hidden sm:block absolute top-0 left-1/2 -translate-x-1/2 w-32 h-6 bg-zinc-900 rounded-b-2xl z-50"></div>
-        
         <div className="px-6 pt-12 pb-2 bg-white flex justify-between items-center z-30 border-b border-zinc-100/50 backdrop-blur-xl bg-white/80">
           <div className="flex items-center gap-3">
-            <button onClick={() => setActiveTab('profile')} className="w-10 h-10 bg-zinc-100 rounded-full flex items-center justify-center overflow-hidden shadow-sm border border-zinc-200">
+            <button onClick={() => setActiveTab('profile')} className="w-10 h-10 bg-zinc-100 rounded-full overflow-hidden shadow-sm border border-zinc-200">
               <img src={user.photoURL} alt="avatar" className="w-full h-full object-cover" />
             </button>
             <div><p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest">Hola, {user.displayName.split(' ')[0]}</p><h2 className="text-sm font-extrabold text-zinc-800 tracking-tight">Proyecto Lucas</h2></div>
@@ -376,7 +453,7 @@ export default function App() {
               <div className="absolute top-12 right-0 w-64 bg-white rounded-2xl shadow-2xl border border-zinc-100 p-2 z-50 animate-fade-in origin-top-right">
                 <button onClick={() => { setIsDiscreetMode(!isDiscreetMode); setIsTopMenuOpen(false); }} className="w-full flex items-center justify-between p-3 hover:bg-zinc-50 rounded-xl transition-colors"><span className="text-sm font-bold flex items-center gap-2">{isDiscreetMode ? <EyeOff size={16} className="text-indigo-500"/> : <Eye size={16}/>} Modo Discreto</span><div className={`w-10 h-6 rounded-full relative transition-colors ${isDiscreetMode ? 'bg-indigo-500' : 'bg-zinc-200'}`}><div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-transform ${isDiscreetMode ? 'translate-x-5' : 'translate-x-1'}`}/></div></button>
                 <div className="h-px bg-zinc-100 my-1 mx-2"></div>
-                <button onClick={() => { setIsTopMenuOpen(false); alert("Historial próximamente"); }} className="w-full flex items-center gap-3 p-3 hover:bg-zinc-50 rounded-xl transition-colors font-bold text-sm text-zinc-700"><CalendarClock size={18} className="text-amber-500"/> Historial de Meses</button>
+                <button onClick={() => { setIsTopMenuOpen(false); alert("Historial de meses próximamente"); }} className="w-full flex items-center gap-3 p-3 hover:bg-zinc-50 rounded-xl transition-colors font-bold text-sm text-zinc-700"><CalendarClock size={18} className="text-amber-500"/> Historial de Meses</button>
               </div>
             )}
           </div>
@@ -400,9 +477,12 @@ export default function App() {
         <button onClick={() => setIsModalOpen(true)} className={`absolute bottom-8 left-1/2 -translate-x-1/2 text-white p-4 rounded-full shadow-2xl z-30 active:scale-95 transition-all hover:scale-110 ${currentSpace === 'personal' ? 'bg-zinc-900 shadow-zinc-900/40' : 'bg-indigo-600 shadow-indigo-600/40'}`}><Plus size={32} strokeWidth={3}/></button>
       </div>
 
+      {/* MODALES */}
       {isModalOpen && <AddTransactionModal onClose={() => setIsModalOpen(false)} onSave={handleAddTransaction} initialSpace={currentSpace} accounts={accounts} />}
       {isManageAccountsOpen && <ManageAccountsModal onClose={() => setIsManageAccountsOpen(false)} accounts={spaceAccounts} spaceName={currentSpace} renderMoney={renderMoney} onAddAccount={(acc) => handleAddAccount(currentSpace, acc)} onUpdateBalance={(id, bal) => handleUpdateAccountBalance(currentSpace, id, bal)} />}
       {isSplitModalOpen && <SplitRuleModal onClose={() => setIsSplitModalOpen(false)} ratio={splitRatio} setRatio={setSplitRatio} />}
+      {isLinkModalOpen && <LinkPartnerModal onClose={() => setIsLinkModalOpen(false)} onLink={handleLinkPartner} />}
+      
       {toastMessage && <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-zinc-900 text-white px-6 py-3 rounded-full text-xs font-bold z-[150] shadow-2xl animate-slide-up flex items-center gap-2"><Sparkles size={14}/> {toastMessage}</div>}
 
       <style dangerouslySetInnerHTML={{__html: `
@@ -421,22 +501,42 @@ export default function App() {
 function TransactionItem({ tx, accounts, onDelete, isDiscreetMode }) {
   const isIncome = tx.type === 'ingreso';
   const catData = CATEGORIES[tx.type].find(c => c.id === tx.category) || CATEGORIES[tx.type][0];
-  const Icon = catData.icon;
   return (
     <div className="group flex items-center justify-between p-4 bg-white rounded-2xl border border-zinc-100 shadow-sm hover:border-zinc-200 transition-all">
       <div className="flex items-center gap-3.5 flex-1 min-w-0">
-        <div className={`p-3 rounded-2xl ${catData.bg} ${catData.color} flex-shrink-0`}><Icon size={20} strokeWidth={2.5}/></div>
+        <div className={`p-3 rounded-2xl ${catData.bg} ${catData.color} flex-shrink-0`}><catData.icon size={20} strokeWidth={2.5}/></div>
         <div className="min-w-0 flex-1">
           <p className="font-bold text-zinc-800 text-sm truncate">{tx.category}</p>
           <div className="flex items-center gap-2 mt-0.5">
-            {tx.space === 'pareja' && <span className="text-[10px] bg-zinc-100 px-1.5 py-0.5 rounded-md text-zinc-600 font-bold">{tx.addedBy}</span>}
+            {tx.space === 'pareja' && <span className="text-[10px] bg-zinc-100 px-1.5 py-0.5 rounded-md text-zinc-600 font-bold uppercase">{tx.addedBy}</span>}
             <span className="text-xs text-zinc-400 truncate font-medium">{tx.desc}</span>
           </div>
         </div>
       </div>
       <div className="text-right ml-2">
         <p className={`font-bold text-base tracking-tight ${isIncome && !isDiscreetMode ? 'text-emerald-500' : 'text-zinc-800'}`}>{isDiscreetMode ? '***' : `${isIncome ? '+' : '-'}${formatMoney(tx.amount)}`}</p>
-        <button onClick={() => onDelete(tx.id, tx.space, tx.type, tx.amount, tx.accountId)} className="text-rose-400 bg-rose-50 p-1 rounded mt-1 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={12}/></button>
+        <button onClick={() => onDelete(tx.id, tx.space, tx.type, tx.amount, tx.accountId)} className="text-rose-400 bg-rose-50 p-1 rounded mt-1 opacity-0 sm:group-hover:opacity-100 transition-opacity"><Trash2 size={12}/></button>
+      </div>
+    </div>
+  );
+}
+
+function LinkPartnerModal({ onClose, onLink }) {
+  const [email, setEmail] = useState('');
+  const handleSubmit = (e) => { e.preventDefault(); if(email) onLink(email); };
+  return (
+    <div className="absolute inset-0 z-[120] flex flex-col justify-end">
+      <div className="absolute inset-0 bg-zinc-900/60 backdrop-blur-sm animate-fade-in" onClick={onClose} />
+      <div className="relative w-full bg-white rounded-t-[2.5rem] p-8 animate-slide-up shadow-2xl flex flex-col gap-6">
+        <div className="flex justify-between items-center"><h3 className="font-extrabold text-xl text-zinc-800">Conectar Cuenta</h3><button onClick={onClose} className="p-2 bg-zinc-100 rounded-full"><X size={20}/></button></div>
+        <p className="text-sm text-zinc-500">Pídele a Gicela que inicie sesión en la app primero. Luego, ingresa aquí su correo para enlazar sus fondos.</p>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+            <input type="email" placeholder="Correo de Google de tu pareja" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-zinc-50 p-4 pl-12 rounded-2xl text-sm font-bold border border-zinc-100 outline-none focus:border-indigo-300" autoFocus required />
+          </div>
+          <button type="submit" className="w-full bg-indigo-600 text-white font-bold py-4 rounded-[1.5rem] shadow-xl active:scale-95 transition-all">Vincular Ahora</button>
+        </form>
       </div>
     </div>
   );
@@ -444,8 +544,27 @@ function TransactionItem({ tx, accounts, onDelete, isDiscreetMode }) {
 
 function AddTransactionModal({ onClose, onSave, initialSpace, accounts }) {
   const [type, setType] = useState('gasto'); const [space, setSpace] = useState(initialSpace); const [amount, setAmount] = useState(''); const [category, setCategory] = useState(CATEGORIES.gasto[0].id); const [desc, setDesc] = useState(''); const availableAccounts = accounts[space] || []; const [accountId, setAccountId] = useState(availableAccounts[0]?.id || '');
-  useEffect(() => { const accs = accounts[space] || []; if (accs.length > 0) setAccountId(accs[0].id); else setAccountId(''); }, [space, accounts]);
-  const handleSubmit = (e) => { e.preventDefault(); if (!amount || Number(amount) <= 0 || !accountId) return; onSave({ type, space, accountId, amount: Number(amount), category, desc: desc || category }); };
+  
+  const handleSubmit = (e) => { 
+    e.preventDefault(); 
+    if (!amount || Number(amount) <= 0 || !accountId) return; 
+    onSave({ type, space, accountId, amount: Number(amount), category, desc: desc || category }); 
+  };
+
+  if (availableAccounts.length === 0) {
+    return (
+      <div className="absolute inset-0 z-[100] flex flex-col justify-end">
+        <div className="absolute inset-0 bg-zinc-900/60 backdrop-blur-sm animate-fade-in" onClick={onClose} />
+        <div className="relative w-full bg-white rounded-t-[2.5rem] p-8 animate-slide-up shadow-2xl flex flex-col gap-4 text-center items-center">
+           <div className="p-4 bg-rose-50 text-rose-500 rounded-full mb-2"><Wallet size={32} /></div>
+           <h3 className="font-extrabold text-xl text-zinc-800">¡Crea una cuenta primero!</h3>
+           <p className="text-zinc-500 text-sm mb-4">Ve a "Administrar" en la pantalla principal para crear una billetera donde registrar este movimiento.</p>
+           <button onClick={onClose} className="w-full py-4 bg-zinc-900 text-white font-bold rounded-[1.5rem] shadow-xl transition-all active:scale-95">Entendido</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="absolute inset-0 z-[100] flex flex-col justify-end">
       <div className="absolute inset-0 bg-zinc-900/60 backdrop-blur-sm animate-fade-in" onClick={onClose} />
@@ -455,7 +574,7 @@ function AddTransactionModal({ onClose, onSave, initialSpace, accounts }) {
            <div className="flex bg-zinc-100 p-1 rounded-2xl"><button type="button" onClick={() => setType('gasto')} className={`flex-1 py-3 text-xs font-bold rounded-xl transition-all ${type === 'gasto' ? 'bg-white shadow text-rose-500' : 'text-zinc-400'}`}>Gasto</button><button type="button" onClick={() => setType('ingreso')} className={`flex-1 py-3 text-xs font-bold rounded-xl transition-all ${type === 'ingreso' ? 'bg-white shadow text-emerald-500' : 'text-zinc-400'}`}>Ingreso</button></div>
            <div className="text-center"><p className="text-[10px] font-bold text-zinc-400 uppercase mb-2">Monto BOB</p><input type="number" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full text-center text-5xl font-light outline-none bg-transparent" autoFocus /></div>
            <div className="grid grid-cols-2 gap-4">
-             <div className="space-y-1"><p className="text-[10px] font-bold text-zinc-400 uppercase ml-1">Espacio</p><select value={space} onChange={(e) => setSpace(e.target.value)} className="w-full bg-zinc-50 p-4 rounded-2xl text-sm font-bold border border-zinc-100 outline-none"><option value="personal">Personal</option><option value="pareja">Pareja</option></select></div>
+             <div className="space-y-1"><p className="text-[10px] font-bold text-zinc-400 uppercase ml-1">Espacio</p><select value={space} onChange={(e) => { setSpace(e.target.value); setAccountId(accounts[e.target.value]?.[0]?.id || ''); }} className="w-full bg-zinc-50 p-4 rounded-2xl text-sm font-bold border border-zinc-100 outline-none"><option value="personal">Personal</option><option value="pareja">Pareja</option></select></div>
              <div className="space-y-1"><p className="text-[10px] font-bold text-zinc-400 uppercase ml-1">Cuenta</p><select value={accountId} onChange={(e) => setAccountId(e.target.value)} className="w-full bg-zinc-50 p-4 rounded-2xl text-sm font-bold border border-zinc-100 outline-none">{availableAccounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
            </div>
            <div className="space-y-1"><p className="text-[10px] font-bold text-zinc-400 uppercase ml-1">Categoría rápida</p>
@@ -502,7 +621,8 @@ function ManageAccountsModal({ onClose, accounts, spaceName, renderMoney, onAddA
                   </div>
                 );
               })}
-              <button onClick={() => setView('add')} className="w-full flex items-center justify-center gap-2 bg-zinc-50 border-2 border-dashed border-zinc-200 text-zinc-400 font-bold py-5 rounded-[1.5rem] hover:bg-zinc-100 hover:text-zinc-700 transition-all active:scale-95 mt-4"><Plus size={20} strokeWidth={2.5} /> Añadir nueva billetera</button>
+              {accounts.length === 0 && <p className="text-center text-sm text-zinc-400 py-6">No tienes billeteras aquí aún.</p>}
+              <button onClick={() => setView('add')} className="w-full flex items-center justify-center gap-2 bg-zinc-50 border-2 border-dashed border-zinc-200 text-zinc-500 font-bold py-5 rounded-[1.5rem] hover:bg-zinc-100 hover:text-zinc-700 transition-all active:scale-95 mt-4"><Plus size={20} strokeWidth={2.5} /> Añadir nueva billetera</button>
             </div>
           )}
           {view === 'edit' && selectedAcc && (
